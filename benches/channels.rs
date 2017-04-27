@@ -28,7 +28,7 @@ fn _bind_sock() -> UdpSocket {
     }().expect("Failed to bind sock")
 }
 
-#[test] #[cfg(nightly)]
+#[test] #[cfg(nightly)] #[ignore]
 fn bench_spsc() {
     let n = 10;
     HIST.lock().unwrap().clear();
@@ -57,7 +57,7 @@ fn bench_spsc() {
     println!("{}", *HIST.lock().unwrap());
 }
 
-#[test]
+#[test] #[ignore]
 fn bench_lossyq() {
     let n = 10;
     HIST.lock().unwrap().clear();
@@ -86,7 +86,7 @@ fn bench_lossyq() {
     println!("{}", *HIST.lock().unwrap());
 }
 
-#[test]
+#[test] #[ignore]
 fn bench_rb() {
     let n = 10;
     HIST.lock().unwrap().clear();
@@ -120,7 +120,7 @@ fn bench_rb() {
     println!("{}", *HIST.lock().unwrap());
 }
 
-#[test]
+#[test] #[ignore]
 fn bench_spmc() {
     let n = 10;
     HIST.lock().unwrap().clear();

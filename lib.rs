@@ -1,26 +1,67 @@
 /*! A thread pool optimised for bursts of activity.
 
-The target use-case is one where all threads sleep for some period of time, but then a large number
-of them must suddenly be woken at once. Normally thread pools are implemented with a work-stealing
-queue, but in this use-case we are guaranteed to create lots of contention on the queue.
+The target use-case is this: all threads in the pool sleep for some period of time, until some
+event requires some or all of them to be suddenly be woken at once. The threads then perform some
+work before all going back to sleep again.
+
+Normally thread pools schedule work based on readiness, and are implemented with a work-stealing
+queue. However, this doesn't work well for our use case since the threads are guaranteed to contend
+with each other when reading from the queue. Instead, we use a round-robin scheduling strategy to
+send work to specific threads, which eliminates contention at the cost of performing badly in the
+case where the workloads are uneven and utilisation is high.
 
 ```
 use burst_pool::BurstPool;
-use std::time::Instant;
 
 let mut pool = BurstPool::new();
-for _ in 0..10 {
-    pool.spawn(|ts: Instant| {
-        println!("{:?}", ts.elapsed());
+for tid in 0..3 {
+    pool.spawn(move|iter| {
+        println!("Thread {} received {}", tid, iter);
     });
 }
 
-let now = Instant::now();
-for _ in 0..10 { pool.send(now); }
+for i in 0..5 {
+    pool.send(i);
+}
 ```
 
-(Note that the above example will actually perform quite badly, because `println!` involves taking
-a global lock.)
+Gives
+
+```none
+Thread 0 received 0
+Thread 0 received 3
+Thread 1 received 1
+Thread 1 received 4
+Thread 2 received 2
+```
+
+## Performance
+
+A pool of 10 threads, to which 10 messages are sent. The threads all wake, read the clock, and then
+go back to sleep. On my machine (which has `max_cstate = 0` - this makes a huge difference to
+thread wake-up times), I see the following results:
+
+```none
+ time (us): frequency
+----------:-----------
+       0-1:     0
+       1-2:     3
+       2-2:    57 ++
+       2-3:   304 ++++++++++++++
+       3-5:   808 +++++++++++++++++++++++++++++++++++++
+       5-8:  1289 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+      8-11:  1491 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+     11-17:   831 +++++++++++++++++++++++++++++++++++++++
+     17-26:   184 ++++++++
+     26-38:    23 +
+     38-58:     7
+     58-86:     2
+    86-130:     1
+      130+:     0
+
+(12.7 us mean)
+(5000 samples total)
+```
 */
 
 use std::thread::{self,JoinHandle};

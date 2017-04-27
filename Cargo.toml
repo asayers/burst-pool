@@ -1,14 +1,29 @@
 [package]
-name = "burst_pool"
+name = "burst-pool"
 version = "0.1.0"
 authors = ["Alex Sayers <alex.sayers@gmail.com>"]
+description = "A thread pool optimised for bursts of activity"
 
-[dependencies]
-bounded-spsc-queue = { version = "0.1", optional = true }
+[lib]
+name = "burst_pool"
+path = "lib.rs"
+
+[dependencies.bounded-spsc-queue]
+optional = true
+version = "0.1"
 
 [dev-dependencies]
+env_logger = "0.4.2"
 lazy_static = "0.2"
+log = "0.3.7"
 lossyq = "0.1.19"
 net2 = "0.2"
+nix = "0.8.1"
+rand = "0.3.15"
 rb = "0.2.0"
 spmc = "0.2.1"
+
+[[bench]]
+name = "bench"
+path = "benches/bench.rs"
+harness = false
