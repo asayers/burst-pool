@@ -1,14 +1,16 @@
 /*! A thread pool optimised for bursts of activity.
 
-The target use-case is this: all threads in the pool sleep for some period of time, until some
-event requires some or all of them to be suddenly be woken at once. The threads then perform some
-work before all going back to sleep again.
+A single thread produces work which is then performed by a pool of worker threads. We expect the
+work to be produces infrequently, but in bursts. This means that, in normal operation, all threads
+in the pool sleep for some period of time, until some event requires some or all of them to be
+suddenly be woken at once. The threads then perform some work before all going back to sleep again.
 
-Normally thread pools schedule work based on readiness, and are implemented with a work-stealing
-queue. However, this doesn't work well for our use case since the threads are guaranteed to contend
-with each other when reading from the queue. Instead, we use a round-robin scheduling strategy to
-send work to specific threads, which eliminates contention at the cost of performing badly in the
-case where the workloads are uneven and utilisation is high.
+Normally thread pools schedule work based on thread readiness, and are implemented using a
+work-stealing queue. However, this doesn't work well for our use case, since many threads become
+runnable at the same time and subsequently create a lot of contention when reading from the queue.
+Instead, we use a round-robin scheduling strategy to send work to specific threads, which
+eliminates contention at the cost of performing badly in the case where the workloads are uneven
+and utilisation is high.
 
 ```
 use burst_pool::BurstPool;
