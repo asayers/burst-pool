@@ -11,11 +11,8 @@ path = "lib.rs"
 [dependencies]
 log = "0.3.7"
 
-[dependencies.bounded-spsc-queue]
-optional = true
-version = "0.1"
-
 [dev-dependencies]
+# bounded-spsc-queue = "0.1"
 env_logger = "0.4.2"
 lazy_static = "0.2"
 lossyq = "0.1.19"
