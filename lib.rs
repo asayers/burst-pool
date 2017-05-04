@@ -76,6 +76,7 @@ than those above, your kernel might be powering down CPU cores too eagerly. If y
 latency more than battery life, consider setting `max_cstate = 0`.
 */
 
+#[cfg(test)] extern crate env_logger;
 #[macro_use] extern crate log;
 
 use std::thread::{self,JoinHandle};
@@ -185,6 +186,8 @@ impl<T> BurstPool<T> where T: Send {
             },
             Err(mpsc::SendError(x)) => {
                 // The thread we tried to send to is dead: remove it from the list.
+                // FIXME: We don't seem to reliably take this branch when a worker panics. In such
+                // cases we silently drop work!
                 let (handle, _) = self.threads.remove(self.next_thread);
                 match handle.join() {
                     Ok(()) => unreachable!(),
@@ -210,4 +213,30 @@ impl<T> Drop for BurstPool<T> {
 #[derive(Debug)]
 pub enum BurstError<T> {
     NoThreads(T),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_panic_1() {
+        // env_logger::init().unwrap();
+        let mut pool = BurstPool::new();
+        pool.spawn(|_| panic!("whoa!"));
+        pool.spawn(|x| println!("got {}", x));
+        println!("still ok");
+        pool.send(1).unwrap();
+        println!("still ok");
+    }
+
+    #[test]
+    fn test_panic_2() {
+        // env_logger::init().unwrap();
+        let mut pool = BurstPool::new();
+        pool.spawn(|_| panic!("whoa!"));
+        println!("still ok");
+        pool.send(1).expect("Sending failed");
+        println!("still ok");
+    }
 }
