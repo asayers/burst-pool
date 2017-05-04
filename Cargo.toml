@@ -8,6 +8,9 @@ description = "A thread pool optimised for bursts of activity"
 name = "burst_pool"
 path = "lib.rs"
 
+[dependencies]
+log = "0.3.7"
+
 [dependencies.bounded-spsc-queue]
 optional = true
 version = "0.1"
@@ -15,7 +18,6 @@ version = "0.1"
 [dev-dependencies]
 env_logger = "0.4.2"
 lazy_static = "0.2"
-log = "0.3.7"
 lossyq = "0.1.19"
 mio = "0.6.6"
 net2 = "0.2"

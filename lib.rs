@@ -66,6 +66,8 @@ thread wake-up times), I see the following results:
 ```
 */
 
+#[macro_use] extern crate log;
+
 use std::thread::{self,JoinHandle};
 use std::sync::mpsc;
 
@@ -117,12 +119,25 @@ impl<T> BurstPool<T> where T: Send {
 
     /// Send a value to be processed by one of the threads in the pool.
     pub fn send(&mut self, x: T) {
-        {
-            let (ref mut handle, ref mut tx) = self.threads[self.next_thread];
-            tx.send(x).unwrap();
-            handle.thread().unpark();
+        if self.threads.is_empty() { panic!("BurstPool::send(): no threads in pool!"); }
+        self.next_thread = self.next_thread % self.threads.len();
+        let ret = self.threads[self.next_thread].1.send(x);
+        match ret {
+            Ok(()) => {
+                // Data sent successfully: unpark and advance next_thread.
+                self.threads[self.next_thread].0.thread().unpark();
+                self.next_thread += 1;
+            },
+            Err(mpsc::SendError(x)) => {
+                // The thread we tried to send to is dead: remove it from the list.
+                let (handle, _) = self.threads.remove(self.next_thread);
+                match handle.join() {
+                    Ok(()) => unreachable!(),
+                    Err(_) => error!("Worker thread panicked! Removing from pool and retrying..."),
+                }
+                self.send(x);
+            },
         }
-        self.next_thread = (self.next_thread + 1) % self.threads.len();
     }
 }
 
