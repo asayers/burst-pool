@@ -36,10 +36,10 @@ impl fmt::Display for Histogram {
         let max = self.buckets.iter().max().unwrap();
         let mk_bar = |x| { vec!['+';x].into_iter().collect::<String>() };
         for i in 0..(len - 1) {
-            writeln!(f, "{:>7.0}: {:>5} {}",
+            writeln!(f, "{:>7.1}: {:>5} {}",
                      FACTOR.powi(i as i32), self.buckets[i], mk_bar(self.buckets[i]*70/max))?;
         }
-        writeln!(f, "{:>6.0}+: {:>5} {}",
+        writeln!(f, "{:>6.1}+: {:>5} {}",
                  FACTOR.powi((len - 2) as i32), self.buckets[len - 1],
                  mk_bar(self.buckets[len - 1]/5))?;
         writeln!(f, "      ({:.1} mean)", self.sum / n as f64)?;

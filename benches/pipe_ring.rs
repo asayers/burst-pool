@@ -34,7 +34,6 @@ pub fn bench() -> Histogram {
             let mut x = HIST.lock().unwrap();
             x.0 = Instant::now();
         }
-        :qa
         write(pipe_tx, &[n]).expect("couldn't write to pipe");
     }
     thread::sleep(Duration::from_millis(10));
