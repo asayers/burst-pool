@@ -6,11 +6,13 @@ extern crate mio;
 extern crate nix;
 extern crate parking_lot_core;
 extern crate rand;
+extern crate scoped_threadpool;
 extern crate threadpool;
 
 // mod bench_parking_lot;
 // mod pipe_fanout;
 mod bench_burst_pool;
+mod bench_scoped_threadpool;
 mod bench_threadpool;
 mod bench_unpark;
 mod histogram;
@@ -23,6 +25,7 @@ fn main() {
     // println!("# pipe_fanout\n{}", pipe_fanout::bench());
     println!("# burst_pool\n{}", bench_burst_pool::bench());
     println!("# pipe_ring\n{}", pipe_ring::bench());
+    println!("# scoped_threadpool\n{}", bench_scoped_threadpool::bench());
     println!("# threadpool\n{}", bench_threadpool::bench());
     println!("# unpark\n{}", bench_unpark::bench());
 }
