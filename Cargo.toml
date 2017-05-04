@@ -7,6 +7,7 @@ documentation = "https://docs.rs/burst-pool/"
 repository = "https://github.com/asayers/burst-pool"
 readme = "README.md"
 keywords = ["threadpool"]
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "burst_pool"
