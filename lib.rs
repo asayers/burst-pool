@@ -83,8 +83,8 @@ use std::sync::mpsc;
 /// When the `BurstPool` is dropped, all threads will be signalled to exit. Dropping will block
 /// until the threads are all dead.
 pub struct BurstPool<T> {
-    pub threads: Vec<(JoinHandle<()>, mpsc::Sender<T>)>,
-    pub next_thread: usize,
+    threads: Vec<(JoinHandle<()>, mpsc::Sender<T>)>,
+    next_thread: usize,
 }
 
 impl<T> BurstPool<T> where T: Send {
