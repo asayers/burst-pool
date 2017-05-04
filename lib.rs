@@ -118,8 +118,11 @@ impl<T> BurstPool<T> where T: Send {
     }
 
     /// Send a value to be processed by one of the threads in the pool.
-    pub fn send(&mut self, x: T) {
-        if self.threads.is_empty() { panic!("BurstPool::send(): no threads in pool!"); }
+    ///
+    /// If there are no threads available to perform the work, an error is returned containing the
+    /// unperformed work.
+    pub fn send(&mut self, x: T) -> Result<(), BurstError<T>> {
+        if self.threads.is_empty() { return Err(BurstError::NoThreads(x)); }
         self.next_thread = self.next_thread % self.threads.len();
         let ret = self.threads[self.next_thread].1.send(x);
         match ret {
@@ -127,6 +130,7 @@ impl<T> BurstPool<T> where T: Send {
                 // Data sent successfully: unpark and advance next_thread.
                 self.threads[self.next_thread].0.thread().unpark();
                 self.next_thread += 1;
+                Ok(())
             },
             Err(mpsc::SendError(x)) => {
                 // The thread we tried to send to is dead: remove it from the list.
@@ -135,7 +139,7 @@ impl<T> BurstPool<T> where T: Send {
                     Ok(()) => unreachable!(),
                     Err(_) => error!("Worker thread panicked! Removing from pool and retrying..."),
                 }
-                self.send(x);
+                self.send(x)
             },
         }
     }
@@ -150,4 +154,9 @@ impl<T> Drop for BurstPool<T> {
             handle.join().unwrap_or_else(|_| error!("Worker thread panicked! Never mind..."));
         }
     }
+}
+
+#[derive(Debug)]
+pub enum BurstError<T> {
+    NoThreads(T),
 }
