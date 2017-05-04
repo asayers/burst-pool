@@ -24,7 +24,7 @@ pub fn bench() -> Histogram {
     for _ in 0..500 {
         thread::sleep(Duration::from_millis(10));
         let now = Instant::now();
-        for _ in 0..THREADS { pool.send(now); }
+        for _ in 0..THREADS { pool.send(now).unwrap(); }
     }
     thread::sleep(Duration::from_millis(10));
     HIST.lock().unwrap().clone()
