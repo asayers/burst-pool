@@ -8,6 +8,7 @@ repository = "https://github.com/asayers/burst-pool"
 readme = "README.md"
 keywords = ["threadpool"]
 license = "MIT OR Apache-2.0"
+exclude = ["histogram.png"]
 
 [lib]
 name = "burst_pool"
