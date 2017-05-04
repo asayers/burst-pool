@@ -3,21 +3,23 @@ name = "burst-pool"
 version = "0.2.0"
 authors = ["Alex Sayers <alex.sayers@gmail.com>"]
 description = "A thread pool optimised for bursts of activity"
+documentation = "https://docs.rs/burst-pool/"
+repository = "https://github.com/asayers/burst-pool"
+readme = "README.md"
+keywords = ["threadpool"]
 
 [lib]
 name = "burst_pool"
 path = "lib.rs"
 
 [dependencies]
-log = "0.3.7"
+log = "0.3"
 
 [dev-dependencies]
-# bounded-spsc-queue = "0.1"
 env_logger = "0.4.2"
 lazy_static = "0.2"
 lossyq = "0.1.19"
 mio = "0.6.6"
-net2 = "0.2"
 nix = "0.8.1"
 parking_lot_core = "0.2.1"
 rand = "0.3.15"
