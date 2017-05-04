@@ -144,10 +144,10 @@ impl<T> BurstPool<T> where T: Send {
 impl<T> Drop for BurstPool<T> {
     /// Signal all the threads in the pool to shut down, and wait for them to do so.
     fn drop(&mut self) {
-        for (handle, sender) in self.threads.drain(..) {
-            ::std::mem::drop(sender);
+        for (handle, tx) in self.threads.drain(..) {
+            ::std::mem::drop(tx);
             handle.thread().unpark();
-            handle.join().unwrap();
+            handle.join().unwrap_or_else(|_| error!("Worker thread panicked! Never mind..."));
         }
     }
 }
