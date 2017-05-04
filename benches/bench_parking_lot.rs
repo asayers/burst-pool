@@ -13,7 +13,7 @@ use std::time::*;
 
 const THREADS: usize = 10;
 
-pub fn bench() {
+pub fn bench() -> Histogram {
     env_logger::init().unwrap();
 
     let (chan_tx, chan_rx) = mpsc::channel();
