@@ -225,7 +225,7 @@ impl<T> Display for BurstError<T> {
     }
 }
 
-impl<T> Error for BurstError<T> where T: Debug + Display {
+impl<T> Error for BurstError<T> where T: Debug {
     fn description(&self) -> &str {
         match *self {
             BurstError::NoThreads(_) => "No threads in pool",
