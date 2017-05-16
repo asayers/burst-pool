@@ -1,6 +1,7 @@
 extern crate burst_pool;
 extern crate deque;
 extern crate env_logger;
+extern crate jobsteal;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 extern crate mio;
@@ -14,6 +15,7 @@ extern crate threadpool;
 // mod pipe_fanout;
 mod bench_burst_pool;
 mod bench_deque;
+mod bench_jobsteal;
 mod bench_scoped_threadpool;
 mod bench_threadpool;
 mod bench_unpark;
@@ -32,5 +34,6 @@ fn main() {
     println!("# scoped_threadpool\n{}", bench_scoped_threadpool::bench());
     println!("# threadpool\n{}", bench_threadpool::bench());
     println!("# unpark\n{}", bench_unpark::bench());
+    println!("# jobsteal\n{}", bench_jobsteal::bench());
     println!("# deque\n{}", bench_deque::bench());
 }

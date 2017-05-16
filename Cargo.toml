@@ -20,6 +20,7 @@ log = "0.3"
 [dev-dependencies]
 deque = "0.3.2"
 env_logger = "0.4.2"
+jobsteal = "0.5.1"
 lazy_static = "0.2"
 lossyq = "0.1.19"
 mio = "0.6.6"
