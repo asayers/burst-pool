@@ -79,8 +79,10 @@ latency more than battery life, consider setting `max_cstate = 0`.
 #[cfg(test)] extern crate env_logger;
 #[macro_use] extern crate log;
 
-use std::thread::{self,JoinHandle};
+use std::error::Error;
+use std::fmt::{self, Debug, Display};
 use std::sync::mpsc;
+use std::thread::{self, JoinHandle};
 
 /// A thread pool optimised for bursts of activity.
 ///
@@ -213,6 +215,22 @@ impl<T> Drop for BurstPool<T> {
 #[derive(Debug)]
 pub enum BurstError<T> {
     NoThreads(T),
+}
+
+impl<T> Display for BurstError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            BurstError::NoThreads(_) => write!(f, "No threads in pool"),
+        }
+    }
+}
+
+impl<T> Error for BurstError<T> where T: Debug + Display {
+    fn description(&self) -> &str {
+        match *self {
+            BurstError::NoThreads(_) => "No threads in pool",
+        }
+    }
 }
 
 #[cfg(test)]
