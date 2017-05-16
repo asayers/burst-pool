@@ -9,6 +9,7 @@ extern crate nix;
 extern crate parking_lot_core;
 extern crate rand;
 extern crate scoped_threadpool;
+extern crate spmc;
 extern crate threadpool;
 
 // mod bench_parking_lot;
@@ -17,6 +18,7 @@ mod bench_burst_pool;
 mod bench_deque;
 mod bench_jobsteal;
 mod bench_scoped_threadpool;
+mod bench_spmc;
 mod bench_threadpool;
 mod bench_unpark;
 // mod bench_unpark_worst;
@@ -34,6 +36,7 @@ fn main() {
     println!("# scoped_threadpool\n{}", bench_scoped_threadpool::bench());
     println!("# threadpool\n{}", bench_threadpool::bench());
     println!("# unpark\n{}", bench_unpark::bench());
+    println!("# spmc\n{}", bench_spmc::bench());
     println!("# jobsteal\n{}", bench_jobsteal::bench());
     println!("# deque\n{}", bench_deque::bench());
 }

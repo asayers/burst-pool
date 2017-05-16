@@ -119,32 +119,3 @@ fn bench_rb() {
     }
     println!("{}", *HIST.lock().unwrap());
 }
-
-#[test] #[ignore]
-fn bench_spmc() {
-    let n = 10;
-    HIST.lock().unwrap().clear();
-    for round in 0..100 {
-        let mut threads = Vec::new();
-        let (tx, rx) = spmc::channel();
-        for i in 0..n {
-            let rx = rx.clone();
-            threads.push(thread::spawn(move|| {
-                // let sock = bind_sock();
-                let recv_ts: Instant = rx.recv().unwrap();  // block
-                let micros = recv_ts.elapsed().subsec_nanos() as f64 / 1_000.0;
-                let _ = format!("[round {}; thread {}] {:>5.0?} us\n", round, i, micros);
-                // sock.send(msg.as_bytes()).unwrap();
-                thread::sleep(Duration::from_millis(10));
-                HIST.lock().unwrap().add(micros);
-            }));
-        }
-        thread::sleep(Duration::from_millis(100));
-        let now = Instant::now();
-        for _ in 0..n { tx.send(now).unwrap(); }
-        for thread in threads.drain(..) {
-            thread.join().unwrap();
-        }
-    }
-    println!("{}", *HIST.lock().unwrap());
-}
