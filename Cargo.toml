@@ -18,6 +18,7 @@ path = "lib.rs"
 log = "0.3"
 
 [dev-dependencies]
+deque = "0.3.2"
 env_logger = "0.4.2"
 lazy_static = "0.2"
 lossyq = "0.1.19"

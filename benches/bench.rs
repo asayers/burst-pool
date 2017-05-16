@@ -1,4 +1,5 @@
 extern crate burst_pool;
+extern crate deque;
 extern crate env_logger;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
@@ -12,6 +13,7 @@ extern crate threadpool;
 // mod bench_parking_lot;
 // mod pipe_fanout;
 mod bench_burst_pool;
+mod bench_deque;
 mod bench_scoped_threadpool;
 mod bench_threadpool;
 mod bench_unpark;
@@ -30,4 +32,5 @@ fn main() {
     println!("# scoped_threadpool\n{}", bench_scoped_threadpool::bench());
     println!("# threadpool\n{}", bench_threadpool::bench());
     println!("# unpark\n{}", bench_unpark::bench());
+    println!("# deque\n{}", bench_deque::bench());
 }
