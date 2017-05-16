@@ -1,6 +1,6 @@
 [package]
 name = "burst-pool"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Alex Sayers <alex.sayers@gmail.com>"]
 description = "A thread pool optimised for bursts of activity"
 documentation = "https://docs.rs/burst-pool/"
