@@ -59,13 +59,16 @@ use nix::sys::eventfd::*;
 use nix::unistd::*;
 use std::os::unix::io::RawFd;
 use std::ptr;
+use std::thread;
 use std::sync::atomic::*;
 use std::sync::Arc;
+use nix::poll::*;
 
 pub struct Sender<T> {
     eventfd: RawFd,
     workers: Vec<Arc<Worker<T>>>,
     next_worker: usize,
+    workers_to_unblock: i64,
     eventfd_buf: [u8; 8],
 }
 
@@ -95,6 +98,7 @@ impl<T> Sender<T> {
             eventfd: eventfd(0, EFD_SEMAPHORE).unwrap(),
             workers: vec![],
             next_worker: 0,
+            workers_to_unblock: 0,
             eventfd_buf: [0;8],
         }
     }
@@ -121,7 +125,9 @@ impl<T> Sender<T> {
     ///
     /// This function does not block, but it does make a (single) syscall.
     pub fn unblock(&mut self) {
-        NativeEndian::write_u64(&mut self.eventfd_buf[..], self.workers.len() as u64);
+        // println!("unblocking workers. {} have work to do", self.workers_to_unblock);
+        NativeEndian::write_i64(&mut self.eventfd_buf[..], self.workers_to_unblock);
+        self.workers_to_unblock = 0;
         write(self.eventfd, &self.eventfd_buf).unwrap();
     }
 }
@@ -140,6 +146,7 @@ impl<T: Send> Sender<T> {
         // 1. Find a receiver in WAITING state
         // 2. Write ptr to that receiver's slot
         // 3. Set that receiver to PENDING state
+        // 4. Note that we need to increment eventfd
 
         let mut target_worker = None;
         for i in 0..self.workers.len() {
@@ -159,6 +166,7 @@ impl<T: Send> Sender<T> {
                 let ptr = self.workers[i].slot.swap(Box::into_raw(x), Ordering::SeqCst);
                 assert!(ptr.is_null(), "send: slot contains non-null ptr. Please report this error.");
                 self.next_worker = (i + 1) % self.workers.len();
+                self.workers_to_unblock += 1;
                 None
             }
             None => Some(x)
@@ -173,7 +181,8 @@ impl<T> Receiver<T> {
         // 2. Block on eventfd
         // 3. Check state to make sure it's PENDING
         // 4. If so, change state to RUNNING
-        // 5. Take ptr from slot and return
+        // 5. Decrement the eventfd
+        // 6. Take ptr from slot and return
 
         // This function always leaves the state as RUNNING or ORPHANED.
         // The sender is allowed to (A) swap the state from WAITING to PENDING, and (B) set the
@@ -184,15 +193,26 @@ impl<T> Receiver<T> {
             RS_ORPHANED => { return Err(RecError::Orphaned); }
             x => panic!("recv(1): bad state ({}). Please report this error.", x),
         }
+        let mut pollfds = [PollFd::new(self.eventfd, POLLIN)];
         loop {
-            read(self.eventfd, &mut self.eventfd_buf).unwrap();
+            // Block until eventfd becomes non-zero
+            poll(&mut pollfds, -1).unwrap();
+            // println!("woke up");
             match self.inner.state.compare_and_swap(RS_PENDING, RS_RUNNING, Ordering::SeqCst) {
-                RS_PENDING => { /* this was a genuine wakeup. let's do some work! */ break; }
-                RS_WAITING => { /* this was a spurious wakeup. let's go back to sleep. */ }
-                RS_ORPHANED => { return Err(RecError::Orphaned); }
+                RS_PENDING => /* this was a genuine wakeup. let's do some work! */ break,
+                RS_WAITING =>
+                    // A wakeup was sent, but it was intended for someone else. First, we let the
+                    // other threads check if the wakeup was for them...
+                    thread::yield_now(),
+                    // ...and now we go back to blocking on eventfd
+                RS_ORPHANED => return Err(RecError::Orphaned),
                 x => panic!("recv(2): bad state ({}). Please report this error.", x),
             }
         }
+        // Decrement the eventfd to show that one of the inteded workers got the message.
+        // FIXME: This additional syscall is quite painful :-(
+        read(self.eventfd, &mut self.eventfd_buf).unwrap();
+        // println!("decremented eventfd");
         let ptr = self.inner.slot.swap(ptr::null_mut(), Ordering::SeqCst);
         assert!(!ptr.is_null(), "recv: slot contains null ptr. Please report this error.");
         unsafe { Ok(Box::from_raw(ptr)) }
@@ -206,7 +226,8 @@ impl<T> Drop for Sender<T> {
         for w in self.workers.iter_mut() {
             w.state.store(RS_ORPHANED, Ordering::SeqCst);
         }
-        self.unblock();
+        NativeEndian::write_i64(&mut self.eventfd_buf[..], 1);
+        write(self.eventfd, &self.eventfd_buf).unwrap();
     }
 }
 
