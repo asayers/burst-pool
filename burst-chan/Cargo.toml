@@ -1,0 +1,12 @@
+[package]
+authors = ["Alex Sayers <alex.sayers@gmail.com>"]
+name = "burst-chan"
+version = "0.1.0"
+
+[dependencies]
+byteorder = "1.1.0"
+nix = "0.9.0"
+
+[lib]
+name = "burst_chan"
+path = "lib.rs"
