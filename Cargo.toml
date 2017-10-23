@@ -35,16 +35,11 @@ spmc = "0.2.2"
 threadpool = "1.7.0"
 
 [[bench]]
-name = "bench_burst_chan"
-path = "benches/bench_burst_chan.rs"
+name = "burst_chan"
+path = "benches/burst_chan.rs"
 harness = false
 
 [[bench]]
-name = "bench_spmc"
-path = "benches/bench_spmc.rs"
-harness = false
-
-[[bench]]
-name = "old_bench"
-path = "benches/old_bench.rs"
+name = "spmc"
+path = "benches/spmc.rs"
 harness = false

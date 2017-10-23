@@ -17,13 +17,13 @@ pub fn bench() -> Histogram {
     for _ in 0..500 {
         thread::sleep(Duration::from_millis(10));
         let now = Instant::now();
-		for _ in 0..10 {
-			pool.submit(move|| {
-				let micros = now.elapsed().subsec_nanos() as f64 / 1_000.0;
-				thread::sleep(Duration::from_millis(2));
-				HIST.lock().unwrap().add(micros);
-			});
-		}
+        for _ in 0..10 {
+            pool.submit(move|| {
+                let micros = now.elapsed().subsec_nanos() as f64 / 1_000.0;
+                thread::sleep(Duration::from_millis(2));
+                HIST.lock().unwrap().add(micros);
+            });
+        }
     }
 
     thread::sleep(Duration::from_millis(10));
