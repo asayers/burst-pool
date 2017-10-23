@@ -40,6 +40,11 @@ path = "benches/bench_burst_chan.rs"
 harness = false
 
 [[bench]]
+name = "bench_spmc"
+path = "benches/bench_spmc.rs"
+harness = false
+
+[[bench]]
 name = "old_bench"
 path = "benches/old_bench.rs"
 harness = false

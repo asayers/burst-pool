@@ -1,37 +1,52 @@
-use histogram::Histogram;
-use spmc;
-use std::sync::Mutex;
+extern crate pbr;
+extern crate spmc;
+mod stats;
+
+use stats::*;
+use std::sync::*;
 use std::thread;
 use std::time::*;
 
-const THREADS: usize = 10;
+const NUM_RECEIVERS: usize = 7;
+const ITERS: usize = 50;
+const WAIT_MS: u64 = 200;
 
-lazy_static!{
-    static ref HIST: Mutex<Histogram> = Mutex::new(Histogram::new());
-}
+fn main() {
+    let (sender, receiver) = spmc::channel();
 
-pub fn bench() -> Histogram {
-    HIST.lock().unwrap().clear();
-    let (tx, rx) = spmc::channel();
-
-    let mut handles = Vec::new();
-    for _ in 0..THREADS {
-        let rx: spmc::Receiver<Instant> = rx.clone();
-        handles.push(thread::spawn(move|| {
-            while let Ok(ts) = rx.recv() {
-                let micros = ts.elapsed().subsec_nanos() as f64 / 1_000.0;
-                thread::sleep(Duration::from_millis(2));
-                HIST.lock().unwrap().add(micros);
+    let gtimes = Arc::new(Mutex::new(Vec::<Duration>::new()));
+    let mut threads = Vec::new();
+    for _ in 0..NUM_RECEIVERS {
+        let receiver: spmc::Receiver<Instant> = receiver.clone();
+        let gtimes = gtimes.clone();
+        let mut ltimes = Vec::with_capacity(ITERS);
+        threads.push(thread::spawn(move|| loop {
+            match receiver.recv() {
+                Ok(x) => {
+                    let dur = x.elapsed();
+                    ltimes.push(dur);
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(_) => {
+                    gtimes.lock().unwrap().extend(&ltimes);
+                    break;
+                }
             }
         }));
     }
 
-    for _ in 0..500 {
-        thread::sleep(Duration::from_millis(10));
+    let mut pb = pbr::ProgressBar::new(ITERS as u64);
+    thread::sleep(Duration::from_millis(100));
+    for _ in 0..ITERS {
+        pb.inc();
         let now = Instant::now();
-        for _ in 0..THREADS { tx.send(now).unwrap(); }
+        for _ in 0..NUM_RECEIVERS {
+            sender.send(now).unwrap();
+        }
+        thread::sleep(Duration::from_millis(WAIT_MS));
     }
 
-    thread::sleep(Duration::from_millis(10));
-    HIST.lock().unwrap().clone()
+    ::std::mem::drop(sender);
+    for t in threads { t.join().unwrap(); }
+    println!("{}", mk_stats(&gtimes.lock().unwrap()));
 }
