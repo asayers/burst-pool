@@ -1,33 +1,34 @@
 extern crate burst_pool;
 extern crate pbr;
+mod stats;
+
+use burst_pool::*;
+use stats::*;
+use std::sync::*;
 use std::thread;
 use std::time::*;
-use burst_pool::*;
 
 const NUM_RECEIVERS: usize = 7;
-const ITERS: usize = 250;
+const ITERS: usize = 50;
+const WAIT_MS: u64 = 200;
 
 fn main() {
     let mut sender: Sender<Instant> = Sender::new();
     let mut threads = Vec::new();
+    let gtimes = Arc::new(Mutex::new(Vec::<Duration>::new()));
     for _ in 0..NUM_RECEIVERS {
         let mut receiver = sender.receiver();
-        let mut times = Vec::with_capacity(ITERS);
+        let gtimes = gtimes.clone();
+        let mut ltimes = Vec::with_capacity(ITERS);
         threads.push(thread::spawn(move || loop {
             match receiver.recv() {
                 Ok(x) => {
                     let dur = x.elapsed();
-                    times.push(dur);
+                    ltimes.push(dur);
                     thread::sleep(Duration::from_millis(1));
                 }
                 Err(RecError::Orphaned) => {
-                    times.sort();
-                    let avg = times.iter().map(Duration::subsec_nanos).sum::<u32>() /
-                                times.len() as u32;
-                    let med = times[times.len() / 2].subsec_nanos();
-                    let best = times[0].subsec_nanos();
-                    let worst = times[times.len() - 1].subsec_nanos();
-                    println!("{} loops => avg {:>5} ns, med {:>5} ns, range {}..{:<7}  - {:?}", times.len(), avg, med, best, worst, thread::current().id());
+                    gtimes.lock().unwrap().extend(&ltimes);
                     break;
                 }
             }
@@ -43,9 +44,10 @@ fn main() {
             if sender.send(Box::new(now)).is_some() { break }
         }
         sender.unblock();
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(WAIT_MS));
     }
 
     ::std::mem::drop(sender);
     for t in threads { t.join().unwrap(); }
+    println!("{}", mk_stats(&gtimes.lock().unwrap()));
 }
