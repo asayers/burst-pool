@@ -1,12 +1,12 @@
 [package]
 name = "burst-pool"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Alex Sayers <alex.sayers@gmail.com>"]
-description = "A thread pool optimised for bursts of activity"
+description = "A SPMC channel optimised for bursts of activity"
 documentation = "https://docs.rs/burst-pool/"
 repository = "https://github.com/asayers/burst-pool"
 readme = "README.md"
-keywords = ["threadpool"]
+keywords = ["threadpool", "spmc", "channel"]
 license = "MIT OR Apache-2.0"
 exclude = ["histogram.png"]
 
@@ -15,17 +15,18 @@ name = "burst_pool"
 path = "lib.rs"
 
 [dependencies]
-log = "0.3"
+byteorder = "1.1.0"
+nix = "0.9.0"
 
 [dev-dependencies]
 deque = "0.3.2"
 env_logger = "0.4.3"
 jobsteal = "0.5.1"
 lazy_static = "0.2.9"
+log = "0.3.8"
 lossyq = "0.1.19"
 mio = "0.6.10"
 parking_lot_core = "0.2.6"
-pbr = "1.0.0"
 rand = "0.3.17"
 rb = "0.2.0"
 scoped_threadpool = "0.1.8"

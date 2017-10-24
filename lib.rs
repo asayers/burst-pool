@@ -1,260 +1,244 @@
-/*! A thread pool optimised for bursts of activity.
+/*!
+This crate provides an SPMC channel for cases where values must be processed now or never, and
+workers are woken up all-at-once.
 
-Consider the following use-case: A single thread produces work which must then be performed by a
-pool of worker threads. The work is produced infrequently, but in bursts. Under normal operation,
-therefore, the threads in the pool sleep until some event requires many of them to be suddenly be
-woken at once. Those threads perform some work before going back to sleep again.
+The intended use-case for this library is pretty specific:
 
-Most thread pools schedule work based on thread readiness. This invariably means that work is
-pushed onto a single queue which is shared by all the workers, and the workers steal work from the
-queue when they're ready to accept it. This usually works very well, but not in our use-case: since
-many threads become runnable at the same time, they immediately contend to read from the queue.
+* Most of the time things are quiet, but occasionally you have a lot of work to do
+* This work must be dispatched to worker threads for processing
+* You have more worker threads than can realistically spin-wait
+* When you receive work to do, you typically have more work than worker threads
 
-Instead, we use a round-robin scheduling strategy, in which the work-producing thread sends work to
-specific workers. This eliminates contention (since each worker has its own queue). The trade-off
-is that it performs badly when utilisation is high and the workloads are uneven.
-
-# Usage
-
-Normally a thread pool will spawn a fixed number of worker threads; once the threads are running,
-you send closures to the pool which are then executed by one of the workers. `BurstPool`'s API
-works a bit differently.
-
-A `BurstPool` is parameterised over the kind of data which will be sent to the workers. (This data
-could be boxed closures, if you want to mimic the normal API.) The user provides work by calling
-`BurstPool::send()`, and one of the workers is chosen to receive it. Each worker has its own
-function which it uses to handle work sent to it. This function is provided when the thread is
-spawned.
+If the above does not apply to you, then the trade-offs made by this library probably aren't good
+ones. If it does, however, then using it is fairly straightforward:
 
 ```
-use burst_pool::BurstPool;
+# use burst_pool::*;
+#
+# fn sleep_ms(x: u64) {
+#     std::thread::sleep(std::time::Duration::from_millis(x));
+# }
+#
+// Create a handle for sending strings
+let mut sender: Sender<String> = Sender::new();
 
-let mut pool = BurstPool::new();
+// Create a handle for receiving strings, and pass it off to a worker thread.
+// Repeat this step as necessary.
+let mut receiver: Receiver<String> = sender.receiver();
+let th = std::thread::spawn(move ||
+    loop {
+        let x = receiver.recv().unwrap();
+        println!("{}", x);
+    }
+);
 
-// Spawn a worker in the pool
-pool.spawn(|x| println!("Received {}!", x));
+// Give the worker thread some time to spawn
+sleep_ms(10);
 
-// Send some work to the worker
-pool.send(36).unwrap();
+// Send a string to the worker and unblock it
+sender.send(Box::new(String::from("hello")));
+sender.unblock();
+
+// Wait for it to process the first string and send another
+sleep_ms(10);
+sender.send(Box::new(String::from("world!")));
+sender.unblock();
+
+// Drop the send handle, signalling the worker to shutdown
+sleep_ms(10);
+std::mem::drop(sender);
+th.join().unwrap_err();  // RecError::Orphaned
 ```
 
-# Performance
-
-I'm using the following benchmark:
-
-1. Create a pool with 10 workers.
-2. Send 10 pieces of work to the pool.
-3. When a thread recieves some work it reads the clock, records its latency, and goes back to
-   sleep.
-
-For comparison, the benchmark was replicated using some of the other thread pools on crates.io
-(which are not optimised for this use-case), and I also benchmarked the time taken to suddenly
-unpark 10 parked threads.
-
-<img src="https://raw.githubusercontent.com/asayers/burst-pool/master/histogram.png" style="margin: 0 auto; display: block;" />
-
-crate               | mean latency | 20 %ⁱˡᵉ | 40 %ⁱˡᵉ  | 60 %ⁱˡᵉ  | 80 %ⁱˡᵉ
---------------------|--------------|---------|----------|----------|-----------
-[burst_pool]        | 8.3 μs       | <3.4 μs | <5.1 μs  | <7.6 μs  | <7.6 μs
-[threadpool]        | 17.4 μs      | <7.6 μs | <11.4 μs | <17.1 μs | <17.1 μs
-[scoped_threadpool] | 18.7 μs      | <7.6 μs | <11.4 μs | <17.1 μs | <17.1 μs
-(unpark only)       | 7.7 μs       | <3.4 μs | <5.1 μs  | <7.6 μs  | <7.6 μs
-
-[burst_pool]: https://docs.rs/burst_pool/
-[threadpool]: https://docs.rs/threadpool/
-[scoped_threadpool]: https://docs.rs/scoped_threadpool/
-
-- The profile of `BurstPool` shows that it doesn't add much latency over just calling `unpark()`.
-  Almost all of the time goes to the linux scheduler.
-- The mean latency is heavily skewed by outliers, lying above the 80th percentile. You can expect
-  latencies better than 7.6 μs most of the time, with the occasional long wait.
-- Getting results as good as these is heavily dependent on setting `max_cstate = 0` - this makes a
-  huge difference to thread wake-up times.
-
-You can run the benchmarks yourself with `cargo bench`. If your results are significantly worse
-than those above, your kernel might be powering down CPU cores too eagerly. If you care about
-latency more than battery life, consider setting `max_cstate = 0`.
+(The name "burst-pool" is a bit of a historical accident. I guess "burst-chan" would be a better
+name.)
 */
 
-#[cfg(test)] extern crate env_logger;
-#[macro_use] extern crate log;
+extern crate nix;
+extern crate byteorder;
 
-use std::error::Error;
-use std::fmt::{self, Debug, Display};
-use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
+use byteorder::*;
+use nix::sys::eventfd::*;
+use nix::unistd::*;
+use std::os::unix::io::RawFd;
+use std::ptr;
+use std::thread;
+use std::sync::atomic::*;
+use std::sync::Arc;
+use nix::poll::*;
 
-/// A thread pool optimised for bursts of activity.
-///
-/// A `BurstPool` maintains one unbounded [channel] for each thread. Because these channels have
-/// only one producer, the more efficient spsc implementation will be used.
-///
-/// [channel]: https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html
-///
-/// Threads spawned in the pool are parked (they do *not* busy-wait) until there is work to be
-/// done. When `BurstPool::send()` is called, a thread is chosen, the payload is pushed onto its
-/// queue, and it is unparked. Threads are selected round-robin, so uneven processing time is not
-/// handled well.
-///
-/// When the `BurstPool` is dropped, all threads will be signalled to exit. Dropping will then
-/// block until the threads are all dead.
-///
-/// If a thread panics it will go undetected until we attempt to send some work to it. At this
-/// point, the thread will be removed from the pool and a warning will be issued, and the work will
-/// be sent to the next thread in the ring. Dead threads are not replenished.
-///
-/// ## Example
-///
-/// ```
-/// use burst_pool::BurstPool;
-///
-/// let mut pool = BurstPool::new();
-///
-/// for thread_id in 0..3 {
-///     pool.spawn(move|x| {
-///         println!("Thread {} received {}", thread_id, x);
-///     });
-/// }
-///
-/// for x in 0..5 {
-///     pool.send(x).unwrap();
-/// }
-/// ```
-///
-/// This will print something like:
-///
-/// ```none
-/// Thread 0 received 0
-/// Thread 0 received 3
-/// Thread 1 received 1
-/// Thread 1 received 4
-/// Thread 2 received 2
-/// ```
-///
-pub struct BurstPool<T> {
-    threads: Vec<(JoinHandle<()>, mpsc::Sender<T>)>,
-    next_thread: usize,
+pub struct Sender<T> {
+    eventfd: RawFd,
+    workers: Vec<Arc<Worker<T>>>,
+    next_worker: usize,
+    workers_to_unblock: i64,
+    eventfd_buf: [u8; 8],
 }
 
-impl<T> BurstPool<T> where T: Send {
-    /// Create a new empty pool.
-    pub fn new() -> BurstPool<T> {
-        BurstPool {
-            threads: Vec::new(),
-            next_thread: 0,
+pub struct Receiver<T> {
+    inner: Arc<Worker<T>>,
+    eventfd: RawFd,
+    eventfd_buf: [u8; 8],
+}
+
+unsafe impl<T: Send> Send for Sender<T> {}
+unsafe impl<T: Send> Send for Receiver<T> {}
+
+struct Worker<T> {
+    state: AtomicUsize,
+    slot: AtomicPtr<T>,
+}
+
+// Receiver states
+const RS_WAITING:  usize = 0;   // This receiver has no work to do, and is blocking
+const RS_PENDING:  usize = 1;   // This receiver has work to do, but hasn't unblocked yet
+const RS_RUNNING:  usize = 2;   // This receiver is running and is doing some work
+const RS_ORPHANED: usize = 3;   // The sender has gone away, never to return
+
+impl<T> Sender<T> {
+    pub fn new() -> Sender<T> {
+        Sender {
+            eventfd: eventfd(0, EFD_SEMAPHORE).unwrap(),
+            workers: vec![],
+            next_worker: 0,
+            workers_to_unblock: 0,
+            eventfd_buf: [0;8],
         }
     }
 
-    /// Spawn a thread in the pool.
-    ///
-    /// The spawned thread blocks until `pool.send()` is called, at which point it may be woken up.
-    /// When woken, it runs the given closure with the value it recieved, before going back to
-    /// sleep.
-    ///
-    /// Since you typically don't know which thread a `send()` call will wake up, all workers in
-    /// a pool should do pretty similar things with the work they receive. Also, bear in mind that
-    /// the `BurstPool`'s scheduling strategy doesn't cope well with uneven processing time -
-    /// particularly when one thread is systematically slower than the others.
-    pub fn spawn<F>(&mut self, mut consume: F)
-            where F: FnMut(T) + Send + 'static, T: 'static {
-        let (tx,rx) = mpsc::channel();
-        let handle = thread::spawn(move|| {
-            loop {
-                use self::mpsc::TryRecvError::*;
-                match rx.try_recv() {
-                    Ok(x) => consume(x),
-                    Err(Empty) => thread::park(),  // May unblock spuriously.
-                    Err(Disconnected) => break,    // Kill the thread
-                }
-            }
+    /// Create a new receiver handle.
+    pub fn receiver(&mut self) -> Receiver<T> {
+        let worker = Arc::new(Worker {
+            state: AtomicUsize::new(RS_RUNNING),
+            slot: AtomicPtr::new(ptr::null_mut()),
         });
-        self.threads.push((handle, tx));
+        self.workers.push(worker.clone());
+        Receiver {
+            inner: worker,
+            eventfd: self.eventfd,
+            eventfd_buf: [0; 8],
+        }
     }
 
-    /// Send a value to be processed by one of the threads in the pool.
+    /// Wake up *all* reciever threads.
     ///
-    /// If there are no threads available to perform the work, an error is returned containing the
-    /// unperformed work.
-    pub fn send(&mut self, x: T) -> Result<(), BurstError<T>> {
-        if self.threads.is_empty() { return Err(BurstError::NoThreads(x)); }
-        self.next_thread = self.next_thread % self.threads.len();
-        let ret = self.threads[self.next_thread].1.send(x);
-        match ret {
-            Ok(()) => {
-                // Data sent successfully: unpark and advance next_thread.
-                self.threads[self.next_thread].0.thread().unpark();
-                self.next_thread += 1;
-                Ok(())
-            },
-            Err(mpsc::SendError(x)) => {
-                // The thread we tried to send to is dead: remove it from the list.
-                // FIXME: We don't seem to reliably take this branch when a worker panics. In such
-                // cases we silently drop work!
-                let (handle, _) = self.threads.remove(self.next_thread);
-                match handle.join() {
-                    Ok(()) => unreachable!(),
-                    Err(_) => error!("Worker thread panicked! Removing from pool and retrying..."),
+    /// This function is guaranteed to wake up all the threads. If some threads are already
+    /// running, then those threads, or others, may be woken up spuriously in the future as a
+    /// result.
+    ///
+    /// This function does not block, but it does make a (single) syscall.
+    pub fn unblock(&mut self) {
+        // println!("unblocking workers. {} have work to do", self.workers_to_unblock);
+        NativeEndian::write_i64(&mut self.eventfd_buf[..], self.workers_to_unblock);
+        self.workers_to_unblock = 0;
+        write(self.eventfd, &self.eventfd_buf).unwrap();
+    }
+}
+
+impl<T: Send> Sender<T> {
+    /// Attempt to send a payload to a waiting receiver.
+    ///
+    /// `send` will only succeed if there is a receiver ready to take the value *right now*. If no
+    /// receivers are ready, the value is returned-to-sender.
+    ///
+    /// Note: `send` will **not** unblock the receiver it sends the payload to. You must call
+    /// `unblock` after calling `send`!
+    ///
+    /// This function does not block or make any syscalls.
+    pub fn send(&mut self, x: Box<T>) -> Option<Box<T>> {
+        // 1. Find a receiver in WAITING state
+        // 2. Write ptr to that receiver's slot
+        // 3. Set that receiver to PENDING state
+        // 4. Note that we need to increment eventfd
+
+        let mut target_worker = None;
+        for i in 0..self.workers.len() {
+            let i2 = (i + self.next_worker) % self.workers.len();
+            match self.workers[i2].state.compare_and_swap(RS_WAITING, RS_PENDING, Ordering::SeqCst) {
+                RS_WAITING => {
+                    /* it was ready */
+                    target_worker = Some(i2);
+                    break;
                 }
-                self.send(x)
-            },
+                RS_PENDING | RS_RUNNING => { /* it's busy */ }
+                x => panic!("send: bad state ({}). Please report this error.", x),
+            }
+        }
+        match target_worker {
+            Some(i) => {
+                let ptr = self.workers[i].slot.swap(Box::into_raw(x), Ordering::SeqCst);
+                assert!(ptr.is_null(), "send: slot contains non-null ptr. Please report this error.");
+                self.next_worker = (i + 1) % self.workers.len();
+                self.workers_to_unblock += 1;
+                None
+            }
+            None => Some(x)
         }
     }
 }
 
-impl<T> Drop for BurstPool<T> {
-    /// Signal all the threads in the pool to shut down, and wait for them to do so.
+impl<T> Receiver<T> {
+    /// Blocks until send() is called on the sender.
+    pub fn recv(&mut self) -> Result<Box<T>, RecError> {
+        // 1. Set state to WAITING
+        // 2. Block on eventfd
+        // 3. Check state to make sure it's PENDING
+        // 4. If so, change state to RUNNING
+        // 5. Decrement the eventfd
+        // 6. Take ptr from slot and return
+
+        // This function always leaves the state as RUNNING or ORPHANED.
+        // The sender is allowed to (A) swap the state from WAITING to PENDING, and (B) set the
+        // state to ORPHANED.
+        // Therefore, when entering this function, the state must be RUNNING or ORPHANED.
+        match self.inner.state.compare_and_swap(RS_RUNNING, RS_WAITING, Ordering::SeqCst) {
+            RS_RUNNING => { /* things looks good. onward! */ }
+            RS_ORPHANED => { return Err(RecError::Orphaned); }
+            x => panic!("recv(1): bad state ({}). Please report this error.", x),
+        }
+        let mut pollfds = [PollFd::new(self.eventfd, POLLIN)];
+        loop {
+            // Block until eventfd becomes non-zero
+            poll(&mut pollfds, -1).unwrap();
+            // println!("woke up");
+            match self.inner.state.compare_and_swap(RS_PENDING, RS_RUNNING, Ordering::SeqCst) {
+                RS_PENDING => /* this was a genuine wakeup. let's do some work! */ break,
+                RS_WAITING =>
+                    // A wakeup was sent, but it was intended for someone else. First, we let the
+                    // other threads check if the wakeup was for them...
+                    thread::yield_now(),
+                    // ...and now we go back to blocking on eventfd
+                RS_ORPHANED => return Err(RecError::Orphaned),
+                x => panic!("recv(2): bad state ({}). Please report this error.", x),
+            }
+        }
+        // Decrement the eventfd to show that one of the inteded workers got the message.
+        // FIXME: This additional syscall is quite painful :-(
+        read(self.eventfd, &mut self.eventfd_buf).unwrap();
+        // println!("decremented eventfd");
+        let ptr = self.inner.slot.swap(ptr::null_mut(), Ordering::SeqCst);
+        assert!(!ptr.is_null(), "recv: slot contains null ptr. Please report this error.");
+        unsafe { Ok(Box::from_raw(ptr)) }
+    }
+}
+
+impl<T> Drop for Sender<T> {
+    /// All receivers will unblock with `RecError::Orphaned`.
     fn drop(&mut self) {
-        for (handle, tx) in self.threads.drain(..) {
-            ::std::mem::drop(tx);
-            handle.thread().unpark();
-            handle.join().unwrap_or_else(|_| error!("Worker thread panicked! Never mind..."));
+        // Inform the receivers that the sender is going away.
+        for w in self.workers.iter_mut() {
+            w.state.store(RS_ORPHANED, Ordering::SeqCst);
         }
+        NativeEndian::write_i64(&mut self.eventfd_buf[..], 1);
+        write(self.eventfd, &self.eventfd_buf).unwrap();
     }
 }
 
-#[derive(Debug)]
-pub enum BurstError<T> {
-    NoThreads(T),
-}
-
-impl<T> Display for BurstError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            BurstError::NoThreads(_) => write!(f, "No threads in pool"),
-        }
-    }
-}
-
-impl<T> Error for BurstError<T> where T: Debug {
-    fn description(&self) -> &str {
-        match *self {
-            BurstError::NoThreads(_) => "No threads in pool",
-        }
-    }
+#[derive(Debug, PartialEq)]
+pub enum RecError {
+    Orphaned,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_panic_1() {
-        // env_logger::init().unwrap();
-        let mut pool = BurstPool::new();
-        pool.spawn(|_| panic!("whoa!"));
-        pool.spawn(|x| println!("got {}", x));
-        println!("still ok");
-        pool.send(1).unwrap();
-        println!("still ok");
-    }
-
-    #[test]
-    fn test_panic_2() {
-        // env_logger::init().unwrap();
-        let mut pool = BurstPool::new();
-        pool.spawn(|_| panic!("whoa!"));
-        println!("still ok");
-        pool.send(1).expect("Sending failed");
-        println!("still ok");
-    }
 }
