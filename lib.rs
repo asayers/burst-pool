@@ -4,13 +4,32 @@ workers are woken up all-at-once.
 
 The intended use-case for this library is pretty specific:
 
-* Most of the time things are quiet, but occasionally you have a lot of work to do
-* This work must be dispatched to worker threads for processing
-* You have more worker threads than can realistically spin-wait
-* When you receive work to do, you typically have more work than worker threads
+* Most of the time things are quiet, but occasionally you have a lot of work to do.
+* This work must be dispatched to worker threads for processing.
+* Latency is important, but you have too many worker threads realistically spin-wait them all.
+* When you receive work to do, you typically have more work than worker threads (ie. workers are
+  woken all at once).
 
 If the above does not apply to you, then the trade-offs made by this library probably aren't good
-ones. If it does, however, then using it is fairly straightforward:
+ones.
+
+Each successfully sent value is recieved by exactly one receiver. This crate is Linux-only.
+
+## Performance
+
+Run `cargo bench` to make some measurements on your own machine. If your results are significantly
+worse than those below, your kernel might be powering down CPU cores too eagerly. If you care about
+latency more than battery life, consider setting max_cstate = 0.
+
+The benchmark considers a pool of 4 workers. A timestamp is sent to all four in quick succession.
+The workers record the delay, and then go to sleep.
+
+```none
+avg 10875 ns (stddev 9343 ns)
+med  8740 ns (range 4268..282199)
+```
+
+## Usage
 
 ```
 # use burst_pool::*;
