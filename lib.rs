@@ -66,7 +66,7 @@ sender.unblock();
 // Drop the send handle, signalling the worker to shutdown
 sleep_ms(10);
 std::mem::drop(sender);
-th.join().unwrap_err();  // RecError::Orphaned
+th.join().unwrap_err();  // RecvError::Orphaned
 ```
 
 (The name "burst-pool" is a bit of a historical accident. I guess "burst-chan" would be a better
@@ -147,7 +147,6 @@ impl<T> Sender<T> {
     ///
     /// This function does not block, but it does make a (single) syscall.
     pub fn unblock(&mut self) {
-        // println!("unblocking workers. {} have work to do", self.workers_to_unblock);
         NativeEndian::write_i64(&mut self.eventfd_buf[..], self.workers_to_unblock);
         self.workers_to_unblock = 0;
         write(self.eventfd, &self.eventfd_buf).unwrap();
@@ -198,7 +197,7 @@ impl<T: Send> Sender<T> {
 
 impl<T> Receiver<T> {
     /// Blocks until send() is called on the sender.
-    pub fn recv(&mut self) -> Result<Box<T>, RecError> {
+    pub fn recv(&mut self) -> Result<Box<T>, RecvError> {
         // 1. Set state to WAITING
         // 2. Block on eventfd
         // 3. Check state to make sure it's PENDING
@@ -212,14 +211,13 @@ impl<T> Receiver<T> {
         // Therefore, when entering this function, the state must be RUNNING or ORPHANED.
         match self.inner.state.compare_and_swap(RS_RUNNING, RS_WAITING, Ordering::SeqCst) {
             RS_RUNNING => { /* things looks good. onward! */ }
-            RS_ORPHANED => { return Err(RecError::Orphaned); }
+            RS_ORPHANED => { return Err(RecvError::Orphaned); }
             x => panic!("recv(1): bad state ({}). Please report this error.", x),
         }
         let mut pollfds = [PollFd::new(self.eventfd, POLLIN)];
         loop {
             // Block until eventfd becomes non-zero
             poll(&mut pollfds, -1).unwrap();
-            // println!("woke up");
             match self.inner.state.compare_and_swap(RS_PENDING, RS_RUNNING, Ordering::SeqCst) {
                 RS_PENDING => /* this was a genuine wakeup. let's do some work! */ break,
                 RS_WAITING =>
@@ -227,14 +225,13 @@ impl<T> Receiver<T> {
                     // other threads check if the wakeup was for them...
                     thread::yield_now(),
                     // ...and now we go back to blocking on eventfd
-                RS_ORPHANED => return Err(RecError::Orphaned),
+                RS_ORPHANED => return Err(RecvError::Orphaned),
                 x => panic!("recv(2): bad state ({}). Please report this error.", x),
             }
         }
         // Decrement the eventfd to show that one of the inteded workers got the message.
         // FIXME: This additional syscall is quite painful :-(
         read(self.eventfd, &mut self.eventfd_buf).unwrap();
-        // println!("decremented eventfd");
         let ptr = self.inner.slot.swap(ptr::null_mut(), Ordering::SeqCst);
         assert!(!ptr.is_null(), "recv: slot contains null ptr. Please report this error.");
         unsafe { Ok(Box::from_raw(ptr)) }
@@ -242,7 +239,7 @@ impl<T> Receiver<T> {
 }
 
 impl<T> Drop for Sender<T> {
-    /// All receivers will unblock with `RecError::Orphaned`.
+    /// All receivers will unblock with `RecvError::Orphaned`.
     fn drop(&mut self) {
         // Inform the receivers that the sender is going away.
         for w in self.workers.iter_mut() {
@@ -254,7 +251,7 @@ impl<T> Drop for Sender<T> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum RecError {
+pub enum RecvError {
     Orphaned,
 }
 

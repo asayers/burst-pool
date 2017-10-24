@@ -27,7 +27,7 @@ fn main() {
                     ltimes.push(dur);
                     thread::sleep(Duration::from_millis(1));
                 }
-                Err(RecError::Orphaned) => {
+                Err(RecvError::Orphaned) => {
                     gtimes.lock().unwrap().extend(&ltimes);
                     break;
                 }
