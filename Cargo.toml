@@ -27,6 +27,7 @@ log = "0.3.8"
 lossyq = "0.1.19"
 mio = "0.6.10"
 parking_lot_core = "0.2.6"
+pbr = "1.0.0"
 rand = "0.3.17"
 rb = "0.2.0"
 scoped_threadpool = "0.1.8"
@@ -34,6 +35,11 @@ spmc = "0.2.2"
 threadpool = "1.7.0"
 
 [[bench]]
-name = "bench"
-path = "benches/bench.rs"
+name = "bench_burst_chan"
+path = "benches/bench_burst_chan.rs"
+harness = false
+
+[[bench]]
+name = "old_bench"
+path = "benches/old_bench.rs"
 harness = false

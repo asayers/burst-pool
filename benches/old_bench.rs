@@ -1,4 +1,3 @@
-extern crate burst_pool;
 extern crate deque;
 extern crate env_logger;
 extern crate jobsteal;
@@ -15,7 +14,6 @@ extern crate threadpool;
 // mod bench_parking_lot;
 // mod bench_unpark_worst;
 // mod pipe_fanout;
-mod bench_burst_pool;
 mod bench_deque;
 mod bench_jobsteal;
 mod bench_mpsc;
@@ -33,7 +31,6 @@ fn main() {
     // println!("# pipe_fanout\n{}", pipe_fanout::bench());
     // println!("# unpark_worst\n{}", bench_unpark_worst::bench());
     println!("# unpark\n{}", bench_unpark::bench());
-    println!("# burst_pool\n{}", bench_burst_pool::bench());
     println!("# std::mpsc\n{}", bench_mpsc::bench());
     println!("# pipe_ring\n{}", pipe_ring::bench());
     println!("# scoped_threadpool\n{}", bench_scoped_threadpool::bench());
