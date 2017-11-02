@@ -1,8 +1,9 @@
 extern crate pbr;
 extern crate spmc;
-mod stats;
 
-use stats::*;
+mod stats;    use stats::*;
+
+use std::io::stderr;
 use std::sync::*;
 use std::thread;
 use std::time::*;
@@ -35,7 +36,7 @@ fn main() {
         }));
     }
 
-    let mut pb = pbr::ProgressBar::new(ITERS as u64);
+    let mut pb = pbr::ProgressBar::on(stderr(), spec.iters as u64);
     thread::sleep(Duration::from_millis(100));
     for _ in 0..ITERS {
         pb.inc();
