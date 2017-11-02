@@ -69,8 +69,15 @@ std::mem::drop(sender);
 th.join().unwrap_err();  // RecvError::Orphaned
 ```
 
-(The name "burst-pool" is a bit of a historical accident. I guess "burst-chan" would be a better
-name.)
+## Design
+
+Each receiver has a "slot" which is either empty, blocked, or contains a pointer to some work.
+Whenever a receiver's slot is empty, it goes to sleep by polling an eventfd.  When issuing work,
+the sender goes through the slots round-robin, placing work in the empty ones.  It then signals the
+eventfd, waking up all sleeping receivers.  If a receiver wakes up and finds work in its slot, it
+takes the work and blocks its slot.  If a receivers wakes up and finds its slot is still empty, it
+goes back to sleep.  When a receiver has finished processing the work, it unblocks its slot.
+
 */
 
 extern crate nix;
