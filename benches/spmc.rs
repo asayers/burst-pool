@@ -49,5 +49,6 @@ fn main() {
 
     ::std::mem::drop(sender);
     for t in threads { t.join().unwrap(); }
-    println!("{}", mk_stats(&gtimes.lock().unwrap()));
+    let times = gtimes.lock().unwrap();
+    println!("{}", Stats::new(&times));
 }
