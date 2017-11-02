@@ -17,7 +17,7 @@ fn main() {
     let mut threads = Vec::new();
     let gtimes = Arc::new(Mutex::new(Vec::<Duration>::new()));
     for _ in 0..NUM_RECEIVERS {
-        let mut receiver = sender.receiver();
+        let mut receiver = sender.mk_receiver();
         let gtimes = gtimes.clone();
         let mut ltimes = Vec::with_capacity(ITERS);
         threads.push(thread::spawn(move || loop {
@@ -43,7 +43,7 @@ fn main() {
         loop {
             if sender.send(Box::new(now)).is_some() { break }
         }
-        sender.unblock();
+        sender.wake_all();
         thread::sleep(Duration::from_millis(WAIT_MS));
     }
 

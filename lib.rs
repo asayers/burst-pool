@@ -43,7 +43,7 @@ let mut sender: Sender<String> = Sender::new();
 
 // Create a handle for receiving strings, and pass it off to a worker thread.
 // Repeat this step as necessary.
-let mut receiver: Receiver<String> = sender.receiver();
+let mut receiver: Receiver<String> = sender.mk_receiver();
 let th = std::thread::spawn(move ||
     loop {
         let x = receiver.recv().unwrap();
@@ -56,12 +56,12 @@ sleep_ms(10);
 
 // Send a string to the worker and unblock it
 sender.send(Box::new(String::from("hello")));
-sender.unblock();
+sender.wake_all();
 
 // Wait for it to process the first string and send another
 sleep_ms(10);
 sender.send(Box::new(String::from("world!")));
-sender.unblock();
+sender.wake_all();
 
 // Drop the send handle, signalling the worker to shutdown
 sleep_ms(10);
@@ -126,7 +126,7 @@ impl<T> Sender<T> {
     }
 
     /// Create a new receiver handle.
-    pub fn receiver(&mut self) -> Receiver<T> {
+    pub fn mk_receiver(&mut self) -> Receiver<T> {
         let worker = Arc::new(Worker {
             state: AtomicUsize::new(RS_RUNNING),
             slot: AtomicPtr::new(ptr::null_mut()),
@@ -146,7 +146,7 @@ impl<T> Sender<T> {
     /// result.
     ///
     /// This function does not block, but it does make a (single) syscall.
-    pub fn unblock(&mut self) {
+    pub fn wake_all(&mut self) {
         NativeEndian::write_i64(&mut self.eventfd_buf[..], self.workers_to_unblock);
         self.workers_to_unblock = 0;
         write(self.eventfd, &self.eventfd_buf).unwrap();
@@ -212,7 +212,7 @@ impl<T> Receiver<T> {
         match self.inner.state.compare_and_swap(RS_RUNNING, RS_WAITING, Ordering::SeqCst) {
             RS_RUNNING => { /* things looks good. onward! */ }
             RS_ORPHANED => { return Err(RecvError::Orphaned); }
-            x => panic!("recv(1): bad state ({}). Please report this error.", x),
+            x => panic!("recv::1: bad state ({}). Please report this error.", x),
         }
         let mut pollfds = [PollFd::new(self.eventfd, POLLIN)];
         loop {
@@ -226,7 +226,7 @@ impl<T> Receiver<T> {
                     thread::yield_now(),
                     // ...and now we go back to blocking on eventfd
                 RS_ORPHANED => return Err(RecvError::Orphaned),
-                x => panic!("recv(2): bad state ({}). Please report this error.", x),
+                x => panic!("recv::2: bad state ({}). Please report this error.", x),
             }
         }
         // Decrement the eventfd to show that one of the inteded workers got the message.
