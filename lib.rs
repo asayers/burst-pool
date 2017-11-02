@@ -17,17 +17,44 @@ Each successfully sent value is recieved by exactly one receiver. This crate is 
 
 ## Performance
 
+The metric we care about is the latency between calling `Sender::send()` on the work-distributing
+thread, and `Receiver::recv()` returning on the threads which will process the work.  We want it to
+be small and consistent.  The design of burst-pool means that we expect this latency to be
+independent of the number of payloads sent.  We also expect it to become much worse as soon as
+there are more worker threads than cores available.
+
+I'm benchmarking burst-pool's performance against [spmc], a crate which provides an SPMC channel
+with the normal queueing semantics when the pool is overloaded. The use-cases of spmc and
+burst-pool are quite different, but when the pool is not overloaded their semantics are the same.
+
 Run `cargo bench` to make some measurements on your own machine. If your results are significantly
 worse than those below, your kernel might be powering down CPU cores too eagerly. If you care about
 latency more than battery life, consider setting max_cstate = 0.
 
-The benchmark considers a pool of 4 workers. A timestamp is sent to all four in quick succession.
-The workers record the delay, and then go to sleep.
+[spmc]: https://docs.rs/spmc
 
-```none
-avg 10875 ns (stddev 9343 ns)
-med  8740 ns (range 4268..282199)
-```
+2 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 3897 | 5144 | 8181  | 22370   | 31162   | 12146  | 31760
+spmc                         | 4260 | 5454 | 7279  | 14389   | 30019   | 9169   | 8484
+
+3 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 4162 | 5116 | 8165  | 22000   | 35767   | 11565  | 14096
+spmc                         | 3911 | 5454 | 8895  | 23216   | 61595   | 12102  | 10197
+
+5 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 3773 | 4786 | 8724  | 22877   | 34214   | 12091  | 10276
+spmc                         | 4241 | 5931 | 12542 | 1064532 | 1086586 | 432018 | 516410
+
+6 payloads sent to 6 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 5875 | 7344 | 12265 | 30397   | 47118   | 15984  | 10130
+spmc                         | 4170 | 7050 | 14561 | 34644   | 59763   | 18003  | 12511
+
+In the 6/6 benchmark, the number of workers is greater than the number of cores on the benchmark
+machine.
 
 ## Usage
 
