@@ -33,25 +33,7 @@ latency more than battery life, consider setting max_cstate = 0.
 
 [spmc]: https://docs.rs/spmc
 
-2 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
------                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
-burst_chan                   | 3897 | 5144 | 8181  | 22370   | 31162   | 12146  | 31760
-spmc                         | 4260 | 5454 | 7279  | 14389   | 30019   | 9169   | 8484
-
-3 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
------                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
-burst_chan                   | 4162 | 5116 | 8165  | 22000   | 35767   | 11565  | 14096
-spmc                         | 3911 | 5454 | 8895  | 23216   | 61595   | 12102  | 10197
-
-5 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
------                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
-burst_chan                   | 3773 | 4786 | 8724  | 22877   | 34214   | 12091  | 10276
-spmc                         | 4241 | 5931 | 12542 | 1064532 | 1086586 | 432018 | 516410
-
-6 payloads sent to 6 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
------                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
-burst_chan                   | 5875 | 7344 | 12265 | 30397   | 47118   | 15984  | 10130
-spmc                         | 4170 | 7050 | 14561 | 34644   | 59763   | 18003  | 12511
+<img src="https://raw.githubusercontent.com/asayers/burst-pool/master/benches.png" style="margin: 0 auto; display: block;" />
 
 In the 6/6 benchmark, the number of workers is greater than the number of cores on the benchmark
 machine.
@@ -105,6 +87,28 @@ eventfd, waking up all sleeping receivers.  If a receiver wakes up and finds wor
 takes the work and blocks its slot.  If a receivers wakes up and finds its slot is still empty, it
 goes back to sleep.  When a receiver has finished processing the work, it unblocks its slot.
 
+*/
+
+/*
+2 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 3897 | 5144 | 8181  | 22370   | 31162   | 12146  | 31760
+spmc                         | 4260 | 5454 | 7279  | 14389   | 30019   | 9169   | 8484
+
+3 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 4162 | 5116 | 8165  | 22000   | 35767   | 11565  | 14096
+spmc                         | 3911 | 5454 | 8895  | 23216   | 61595   | 12102  | 10197
+
+5 payloads sent to 3 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 3773 | 4786 | 8724  | 22877   | 34214   | 12091  | 10276
+spmc                         | 4241 | 5931 | 12542 | 1064532 | 1086586 | 432018 | 516410
+
+6 payloads sent to 6 workers | 1%   | 10%  | 50%   | 90%     | 99%     | mean   | stddev
+-----                        | ---: | ---: | ----: | ------: | ------: | -----: | -----:
+burst_chan                   | 5875 | 7344 | 12265 | 30397   | 47118   | 15984  | 10130
+spmc                         | 4170 | 7050 | 14561 | 34644   | 59763   | 18003  | 12511
 */
 
 extern crate nix;

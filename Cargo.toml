@@ -8,7 +8,7 @@ repository = "https://github.com/asayers/burst-pool"
 readme = "README.md"
 keywords = ["threadpool", "spmc", "channel"]
 license = "MIT OR Apache-2.0"
-exclude = ["benches/old/*"]
+exclude = ["benches/old/*", "benches.png"]
 
 [lib]
 name = "burst_pool"
