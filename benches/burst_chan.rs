@@ -1,30 +1,30 @@
 extern crate burst_pool;
 extern crate pbr;
 
-mod stats;    use stats::*;
 mod settings; use settings::*;
 
 use burst_pool::*;
 use std::io::stderr;
-use std::sync::*;
 use std::thread;
 use std::time::*;
 
 fn main() {
-    println!("burst_chan");
     for spec in BENCH_SPECS.iter() {
-        println!("{:?}\n{}", spec, bench(spec));
+        println!("# {:?}\n\"burst-pool {}/{}\"", spec, spec.num_msgs, spec.num_receivers);
+        bench(spec);
+        println!("\n\n");
     }
 }
 
-fn bench(spec: &BenchSpec) -> Stats {
+fn bench(spec: &BenchSpec) {
     let mut sender: Sender<Instant> = Sender::new();
     let mut threads = Vec::new();
-    let gtimes = Arc::new(Mutex::new(Vec::<Duration>::new()));
+    // let gtimes = Arc::new(Mutex::new(Vec::<Duration>::new()));
     for _ in 0..spec.num_receivers {
         let mut receiver = sender.mk_receiver();
-        let gtimes = gtimes.clone();
+        // let gtimes = gtimes.clone();
         let mut ltimes = Vec::with_capacity(spec.iters);
+        let gaussian_weight = (spec.iters as f64).recip();
         threads.push(thread::spawn(move || loop {
             match receiver.recv() {
                 Ok(x) => {
@@ -33,7 +33,10 @@ fn bench(spec: &BenchSpec) -> Stats {
                     thread::sleep(Duration::from_millis(1));
                 }
                 Err(RecvError::Orphaned) => {
-                    gtimes.lock().unwrap().extend(&ltimes);
+                    // gtimes.lock().unwrap().extend(&ltimes);
+                    for time in ltimes {
+                        println!("{}{:09} {}", time.as_secs(), time.subsec_nanos(), gaussian_weight);
+                    }
                     break;
                 }
             }
@@ -54,6 +57,6 @@ fn bench(spec: &BenchSpec) -> Stats {
 
     ::std::mem::drop(sender);
     for t in threads { t.join().unwrap(); }
-    let times = gtimes.lock().unwrap();
-    Stats::new(&times)
+    // let times = gtimes.lock().unwrap();
+    // Stats::new(&times)
 }
