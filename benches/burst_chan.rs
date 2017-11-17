@@ -24,7 +24,8 @@ fn bench(spec: &BenchSpec) {
         let mut receiver = sender.mk_receiver();
         // let gtimes = gtimes.clone();
         let mut ltimes = Vec::with_capacity(spec.iters);
-        let gaussian_weight = (spec.iters as f64).recip();
+        let lines = spec.iters * ::std::cmp::min(spec.num_msgs, spec.num_receivers);
+        let gaussian_weight = (lines as f64 ).recip();
         threads.push(thread::spawn(move || loop {
             match receiver.recv() {
                 Ok(x) => {

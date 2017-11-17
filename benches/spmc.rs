@@ -24,7 +24,8 @@ fn bench(spec: &BenchSpec) {
         let receiver: spmc::Receiver<Instant> = receiver.clone();
         // let gtimes = gtimes.clone();
         let mut ltimes = Vec::with_capacity(spec.iters);
-        let gaussian_weight = (spec.iters as f64).recip();
+        let lines = spec.iters * spec.num_msgs;
+        let gaussian_weight = (lines as f64).recip();
         threads.push(thread::spawn(move|| loop {
             match receiver.recv() {
                 Ok(x) => {

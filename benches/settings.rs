@@ -10,26 +10,38 @@ pub struct BenchSpec {
 pub const BENCH_SPECS: &[BenchSpec] = &[
     BenchSpec {
         num_receivers: 3,
+        num_msgs: 1,
+        iters: 1000,
+        wait_ms: 200,
+    },
+    BenchSpec {
+        num_receivers: 3,
         num_msgs: 2,
-        iters: 500,
-        wait_ms: 50,
+        iters: 1000,
+        wait_ms: 200,
     },
     BenchSpec {
         num_receivers: 3,
         num_msgs: 3,
-        iters: 500,
-        wait_ms: 50,
-    },
-    BenchSpec {
-        num_receivers: 3,
-        num_msgs: 5,
-        iters: 500,
-        wait_ms: 50,
+        iters: 1000,
+        wait_ms: 200,
     },
     BenchSpec {
         num_receivers: 6,
         num_msgs: 6,
-        iters: 500,
-        wait_ms: 50,
+        iters: 1000,
+        wait_ms: 200,
+    },
+    BenchSpec {
+        num_receivers: 3,
+        num_msgs: 4,
+        iters: 1000,
+        wait_ms: 200,
+    },
+    BenchSpec {
+        num_receivers: 3,
+        num_msgs: 5,
+        iters: 1000,
+        wait_ms: 200,
     },
 ];
