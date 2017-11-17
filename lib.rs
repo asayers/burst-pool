@@ -17,7 +17,7 @@ Each successfully sent value is recieved by exactly one receiver. This crate is 
 
 ## Performance
 
-The metric we care about is the latency between calling `Sender::send()` on the work-distributing
+The metric we care about is the latency between calling `Sender::enqueue()` on the work-distributing
 thread, and `Receiver::recv()` returning on the threads which will process the work.  We want it to
 be small and consistent.  The design of burst-pool means that we expect this latency to be
 independent of the number of payloads sent.  We also expect it to become much worse as soon as
@@ -64,16 +64,16 @@ let th = std::thread::spawn(move ||
 sleep_ms(10);
 
 // Send a string to the worker and unblock it
-sender.send(Box::new(String::from("hello")));
+sender.enqueue(Box::new(String::from("hello")));
 sender.wake_all();
+sleep_ms(10);       // wait for it to process the first string
 
-// Wait for it to process the first string and send another
-sleep_ms(10);
-sender.send(Box::new(String::from("world!")));
+// Send another string
+sender.enqueue(Box::new(String::from("world!")));
 sender.wake_all();
+sleep_ms(10);
 
 // Drop the send handle, signalling the worker to shutdown
-sleep_ms(10);
 std::mem::drop(sender);
 th.join().unwrap_err();  // RecvError::Orphaned
 ```
@@ -194,14 +194,14 @@ impl<T> Sender<T> {
 impl<T: Send> Sender<T> {
     /// Attempt to send a payload to a waiting receiver.
     ///
-    /// `send` will only succeed if there is a receiver ready to take the value *right now*. If no
+    /// `enqueue` will only succeed if there is a receiver ready to take the value *right now*. If no
     /// receivers are ready, the value is returned-to-sender.
     ///
-    /// Note: `send` will **not** unblock the receiver it sends the payload to. You must call
-    /// `unblock` after calling `send`!
+    /// Note: `enqueue` will **not** unblock the receiver it sends the payload to. You must call
+    /// `wake_all` after calling `enqueue`!
     ///
     /// This function does not block or make any syscalls.
-    pub fn send(&mut self, x: Box<T>) -> Option<Box<T>> {
+    pub fn enqueue(&mut self, x: Box<T>) -> Option<Box<T>> {
         // 1. Find a receiver in WAITING state
         // 2. Write ptr to that receiver's slot
         // 3. Set that receiver to PENDING state
@@ -217,13 +217,13 @@ impl<T: Send> Sender<T> {
                     break;
                 }
                 RS_PENDING | RS_RUNNING => { /* it's busy */ }
-                x => panic!("send: bad state ({}). Please report this error.", x),
+                x => panic!("enqueue: bad state ({}). Please report this error.", x),
             }
         }
         match target_worker {
             Some(i) => {
                 let ptr = self.workers[i].slot.swap(Box::into_raw(x), Ordering::SeqCst);
-                assert!(ptr.is_null(), "send: slot contains non-null ptr. Please report this error.");
+                assert!(ptr.is_null(), "enqueue: slot contains non-null ptr. Please report this error.");
                 self.next_worker = (i + 1) % self.workers.len();
                 self.workers_to_unblock += 1;
                 None
@@ -234,7 +234,8 @@ impl<T: Send> Sender<T> {
 }
 
 impl<T> Receiver<T> {
-    /// Blocks until send() is called on the sender.
+    /// Blocks until (1) a message is sent to this `Receiver`, and (2) wake_all() is called on the
+    /// associated `Sender`.
     pub fn recv(&mut self) -> Result<Box<T>, RecvError> {
         // 1. Set state to WAITING
         // 2. Block on eventfd

@@ -49,7 +49,7 @@ fn bench(spec: &BenchSpec) {
         pb.inc();
         let now = Instant::now();
         for _ in 0..spec.num_msgs {
-            if sender.send(Box::new(now)).is_some() { break }
+            if sender.enqueue(Box::new(now)).is_some() { break }
         }
         sender.wake_all();
         thread::sleep(Duration::from_millis(spec.wait_ms));
