@@ -1,58 +1,68 @@
 /*!
-An SPMC channel which gives low, very consistent latencies. Designed for cases where values must be
-processed now-or-never, and workers are woken up all-at-once.
+An SPMC channel with low, consistent latency, designed for cases where values arrive in a batch and
+must be processed now-or-never.
 
+burst-pool differs from a regular spmc channel in one major way: **sending fails when all workers
+are currently busy**.  This lets the sender distribute as much work as possible, and then handle
+overflow work differently (probably by throwing it away).
+
+<!--
 The intended use-case for this library is pretty specific:
 
-* Most of the time things are quiet, but occasionally you have a lot of work to do.
+* Most of the time things are quiet, but occasionally you get a lot of work to do.
 * This work must be dispatched to worker threads for processing.
 * Latency is important, but you have too many worker threads to spin-wait them all.
 * When you receive work to do, you typically saturate the pool of workers.
 
 If the above does not apply to you, then the trade-offs made by this library may not be good ones.
+-->
 
 ## Performance
 
-I'm benchmarking burst-pool's performance against the excellent [spmc] crate.  The use-cases of
-spmc and burst-pool are quite different, but when the pool is not overloaded their semantics are
-the same.  When the pool is overloaded, spmc provides the normal queueing semantics you'd expect
-from an unbounded channel.
+**tl;dr:** Same ballpark as [spmc]. Best when the number of workers is less than number of cores.
+
+I'm using the excellent [spmc] crate as a benchmark.  spmc provides a reliable unbounded channel,
+and when the pool is overloaded it has the normal "queueing" semantics (as opposed to burst-pool's
+"return-to-sender" semantics).  The metric we care about is `enqueue`→`recv` latency.  Below are
+some kernel density estimates.  The "n/m" notation in the labels means "n messages sent to m
+workers".
 
 [spmc]: https://docs.rs/spmc
 
-The metric we care about is `enqueue`→`recv` latency - the time between the work-distributing thread
-calling `enqueue`, and a worker thread's `recv` call returning.  Below are some kernel density
-estimates.  The "n/m" notation in the labels means "n messages sent to m workers".
-
 <img src="https://raw.githubusercontent.com/asayers/burst-pool/master/benches.png" style="margin: 0 auto; display: block;" />
 
-Observations:
+Here's my interpretation of the numbers:
 
-* Keeping the number of workers fixed to 3, burst-pool's performance seem to be unaffected by the
-  number of messages sent.
-* spmc's performance, on the other hand, compares favourably when pool utilisation is low (1/3),
-  becoming gradually worse as the number of messages increases (2/3), until it is roughly the same
-  as burst-pool in the saturating case (3/3).
+* Keeping the number of workers fixed to 3 and varying the number of messages sent appears to have
+  no effect on burst-pool's performance. spmc, on the other hand, compares favourably when pool
+  utilisation is low (1/3), becoming gradually worse as the number of messages increases (2/3),
+  until it is roughly the same as burst-pool in the saturating case (3/3).
 * When the pool is overloaded (4/3, 5/3) we see the difference in the semantics of the two crates.
-  In the burst-pool benchmark, only 3 messages are send and 2 are discarded. In the spmc benchmark,
-  all 5 messages are sent, giving a bimodal distribution with the second peak around 1000 μs.
-* Comparing the two saturating benchmarks, we see that performance is roughly the same when the
-  number of workers is less than the number of cores (3/3), but that burst-pool degrades more badly
-  when it exceeds the number of cores (6/6)
+  In the burst-pool benchmark, only 3 messages are sent and 2 are discarded. In the spmc benchmark,
+  all 5 messages are sent, giving a bimodal distribution with the second peak around 1000 μs. (This
+  seems to mess up gnuplot.)
+* Comparing the two saturating benchmarks (3/3, 6/6) we see another difference. When the number of
+  workers is less than the number of available cores (3/3) we see that performance is roughly the
+  same, but that burst-pool degrades more badly when it exceeds the number of cores (6/6).
+* The response time is generally a bit more reliable for burst-pool than spmc (ie. the variance is
+  lower), with the exception of the 1/3 benchmark.
 
-These observations are consistent with the expected performance characteristics.
+These observations are consistent with the expected performance characteristics. (See
+[Design](#design), below.)
 
-Run `cargo bench` to make some measurements on your own machine, and the provided gnuplot script to
-visualise them.  (Pro tip: If your results are significantly worse than those above, your kernel
-might be powering down CPU cores too eagerly.  If you care about latency more than battery life,
-consider setting max_cstate = 0.)
+Run `cargo bench` to make some measurements on your own machine; there's also a gnuplot script
+which you can use to visualise the results.  (Pro tip: If your results are significantly worse than
+those above, your kernel might be powering down CPU cores too eagerly.  If you care about latency
+more than battery life, consider setting max_cstate = 0.)
 
 ## Usage
 
-The API requires two calls to actually send a message to a receiver: first you enqueue a message
-(with `enqueue`), then you wake the receiver (with `wake_all`).  A call to `enqueue` will succeed only if
-there is a receiver which is waiting for work.  If it succeeds, the message will be recieved by
-exactly one receiver.
+The API requires two calls to actually send a message to a receiver: first you place your message
+in the mailbox of one of your workers (`enqueue`); then you wake the worker up, notifying it that
+it should check its mailbox (`wake_all`).  A call to `enqueue` will only succeed if the sender can
+find an empty mailbox to put the message in (ie., at least one of your workers must currently be
+blocking on a call to `recv`).  If `enqueue` fails, you get your message back.  If it succeeds, the
+message will be recieved by exactly one receiver the next time you call `wake_all`.
 
 ```
 # use burst_pool::*;
@@ -107,7 +117,7 @@ than cores available.  The benchmark results are consistent with these expectati
 
 ## Portability
 
-This crate is Linux-only due to its use of eventfds.
+This crate is Linux-only.
 
 */
 
@@ -173,6 +183,7 @@ const RS_WAITING:  usize = 0;   // This receiver has no work to do, and is block
 const RS_PENDING:  usize = 1;   // This receiver has work to do, but hasn't unblocked yet
 const RS_RUNNING:  usize = 2;   // This receiver is running and is doing some work
 const RS_ORPHANED: usize = 3;   // The sender has gone away, never to return
+// TODO: const RS_INTEND_TO_DROP // The receiver wants to be dropped from the pool
 
 impl<T> Sender<T> {
     pub fn new() -> Sender<T> {
